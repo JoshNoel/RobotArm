@@ -1,4 +1,10 @@
 Arduino Robot Arm
 
-Not yet intended for wider public use
-Instuctions to be made
+HARDWARE
+Arduino, SSC32
+
+INSTALLATION
+Not yet intended for wider public use: instuctions yet to be made
+
+CREDITS
+Special thanks to the Arduino team for making the Arduino IDE, Circuits@Home for the inverse kinematics code, and Martin Peris for his SSC32 arduino driver
