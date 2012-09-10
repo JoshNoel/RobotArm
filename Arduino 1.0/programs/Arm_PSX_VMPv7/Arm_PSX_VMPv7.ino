@@ -1,4 +1,5 @@
 /* AL5D robotic arm manual control using PSX controller. Servo controller by Lynxmotion SSC32 servo controller*/
+//Include the SSC32, SPI, and PS2X libraries
 #include <SSC32.h>
 #include <SPI.h>
 #include <PS2X_lib.h>
@@ -52,7 +53,7 @@ armdata;
 
 void setup()
 {
-  //Servo end points from origional code
+  //Servo maximum and minimum rotations from origional circuits@home ionverse kinematics code, commented out to disable
   /*
    servos.setbounds( BAS_SERVO, 900, 2100 );
    servos.setbounds( SHL_SERVO, 1000, 2100 );
@@ -72,12 +73,12 @@ void setup()
   //Error print removed because it iterferes with serial connection to SSC 32
   type = ps2x.readType();
 
-  //Start Position
+  //Start Position of gripper using X (which translates to rotation speed) and Y cordinates (horizontal - distance out from base) and Z (height - distance vertically from base)
   set_arm( armdata.x_coord = 0, armdata.y_coord = -76.00, armdata.z_coord = 652.00, armdata.gripper_angle = 0 ); //Use (y=-76, z=652) for long, (y=0, z=680) for medium, (y =-200, z=350) for no extension
   myssc.servoMove( WRO_SERVO, armdata.wrist_rotate = 1500 );
   myssc.servoMove( GRI_SERVO, armdata.gripper_servo = 890 );
 
-  //Controller Ready Loop
+  //Controller Ready Loop - operator can prepare the controller by turning on analog mode and then hitting select. If not, the controller will report false values and the robot will act sporatically and out of controll
 Setup:
   //Check PSX state
   ps2x.read_gamepad();
@@ -90,6 +91,7 @@ Setup:
     goto Setup;
 }
 
+//Main loop of program - updates gripper cordinates according to new variable values and reports them to computer
 void loop()
 {
   if(error == 1) //skip loop if no controller found
