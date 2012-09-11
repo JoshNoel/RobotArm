@@ -124,10 +124,12 @@ byte PSX_poll( void )
   ps2x.read_gamepad(false, vibrate);
 
   //Base Rotate
-  float LX = (ps2x.Analog(PSS_LX));  //Create variable LX for left stick analog values
-  int bas_servopulse = map(LX, 0, 255, 1430, 1570); //Map the left analog stick values to the range of values the servo accepts and then save it as the base servo pulse value
-  //If any of these values are true, check the D-Pad, if it is being pressed left or right, slowly rotate the base in that direction. If not, check the base servopulse value, if it is above or below the set range, send the value to the servo, rotating the base left or right 
-  if(ps2x.Button(PSB_PAD_LEFT) || ps2x.Button(PSB_PAD_RIGHT) || bas_servopulse>1520 || bas_servopulse<1480){ //remember, bas_servopulse corresponds to the left analog stick
+  //Create variable LX for left stick analog values and map the left analog stick values to the range of values the servo accepts and then save it as the base servo pulse value
+  float LX = (ps2x.Analog(PSS_LX));
+  int bas_servopulse = map(LX, 0, 255, 1430, 1570);
+  //If any of these values are true, check the D-Pad, if it is being pressed left or right, slowly rotate the base in that direction. If not, check the base servopulse value (which corresponds to the left analog stick x), 
+  //if it is above or below the dead zone, send the value to the servo, rotating the base left or right 
+  if(ps2x.Button(PSB_PAD_LEFT) || ps2x.Button(PSB_PAD_RIGHT) || bas_servopulse>1520 || bas_servopulse<1480){
     //Fine Controll on D-Pad
     if(ps2x.Button(PSB_PAD_LEFT) || ps2x.Button(PSB_PAD_RIGHT)){
       if(ps2x.Button(PSB_PAD_RIGHT)) myssc.servoMove(BAS_SERVO, 1515);
@@ -149,51 +151,53 @@ byte PSX_poll( void )
   }
   else myssc.servoMove(BAS_SERVO, 1500); //If none of the values are true, set the rotation to neutral so it does not move
 
-  //Not sure of difference between gripper angle and wrist angle
+  //Wrist angle - map the right analog x to smaller values, and if outside of the dead zone, add or subtract that from the current gripper wrist angle
   float RX = (ps2x.Analog(PSS_RX));
-  int RXm = map(RX, 0, 255, 5, -5);
+  int RXm = map(RX, 0, 255, 5, -5); //RXm stands for "Right Analog X mapped"
   if((RXm >2) || (RXm<-2))
-    armdata.gripper_angle -= ( RXm );
+    armdata.gripper_angle -= ( RXm ); //Gripper angle is the angle of the wrist
 
-  //
-  float RY = (ps2x.Analog(PSS_RY));  //RY and RYm are also used for Wrist Angle
+  //Gripper Height - Map right analog y to smaller values and check if any of the conditions for the values that controll height are true
+  float RY = (ps2x.Analog(PSS_RY));
   int RYm = map(RY, 0, 255, 10, -10);
   if(ps2x.Button(PSB_PAD_UP) || ps2x.Button(PSB_PAD_DOWN) || bas_servopulse>1510 || bas_servopulse<1490){
-    //Fine Controll on D-Pad
+    //Fine Controll on D-Pad - Check D pad, if up or down is being presses slowly move the gripper up or down
     if(ps2x.Button(PSB_PAD_UP) || ps2x.Button(PSB_PAD_DOWN))
     {
       if(ps2x.Button(PSB_PAD_UP)) armdata.y_coord += ( 6 );
       if(ps2x.Button(PSB_PAD_DOWN)) armdata.y_coord -= ( 6 );
     }
   }
+  //If D Pad up/down is not being pressed, then check RYm (which corresponds to right alalog y). If it is outside of the dead zone, check if L1 is being pressed; if it is, move at a slowe speed, if not, move at the default speed.
   else{
     if((RYm >4) || (RYm<-4))
       if(ps2x.Button(PSB_L1))
         armdata.y_coord += ( RYm );
       else
-        armdata.z_coord += ( RYm * 2 );
+        armdata.z_coord += ( RYm * 2 ); //Even though RYm is doubbled, this is considered default speed
   }
 
-  //
+  //Horizontal Distance from base (Left analog Y) - map values and, if outside the dead zone, add/subtract the distance of gripper horizontally from base 
   float LY = (ps2x.Analog(PSS_LY));
   int LYm = map(LY, 0, 255, 10, -10);
   if((LYm >3) || (LYm<-3))
     armdata.y_coord += ( LYm );
 
-  //Wrist Rotate Re-Center (when PSX button R3 is pressed)
+  //Wrist Rotate Re-Center (R3)
   if(ps2x.Button(PSB_R3))
     armdata.wrist_rotate = 1500;
 
   //Gripper Open/Close (R2/L2)
-  //Open gripper with R2
+  //Open gripper (R2)
   if(ps2x.Button(PSB_R2)) 
     armdata.gripper_servo += ( 300 );
-  //Close Gripper with L2
+  //Close Gripper (L2)
   if(ps2x.Button(PSB_L2)) 
     armdata.gripper_servo -= ( 300 );
-  //Fully Open
+  //Fully Open (L3)
   if(ps2x.Button(PSB_L3))
     armdata.gripper_servo = ( 890 );
+  //Gripper open/close limits - prevents servo from trying to rotate (open) farther than it physically can
   if(armdata.gripper_servo < 500 ) armdata.gripper_servo = 500;
   if(armdata.gripper_servo > 2600 ) armdata.gripper_servo = 2600;
 
@@ -335,6 +339,7 @@ byte PSX_poll( void )
 
 
 /* Arm positioning routine utilizing inverse kinematics from circuits@home */
+//No additional commenting - we do not edit this much, it could be a library, in fact, but libraries are really only purposefull for repeated use, and we are not concerned with releasing the code for other uses yet
 /* z is height, y is distance from base center out, x is side to side. y,z can only be positive */
 //void set_arm( uint16_t x, uint16_t y, uint16_t z, uint16_t grip_angle )
 void set_arm( float x, float y, float z, float grip_angle_d )
