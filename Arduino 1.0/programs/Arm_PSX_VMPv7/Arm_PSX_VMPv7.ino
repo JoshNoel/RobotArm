@@ -112,11 +112,11 @@ void loop()
   Serial.print("Wrist Angle:");
   Serial.println( armdata.gripper_angle );
 
-  //Run PSX_poll
+  //Run PSX_poll to get controller readings
   PSX_poll();
 }
 
-/* Poll mouse using Get Report and fill arm data structure */
+/* Poll PS2 (PSX) controller using Get Report and fill arm data structure */
 byte PSX_poll( void )
 {
   //Check PSX state
@@ -124,9 +124,10 @@ byte PSX_poll( void )
   ps2x.read_gamepad(false, vibrate);
 
   //Base Rotate
-  float LX = (ps2x.Analog(PSS_LX));
-  int bas_servopulse = map(LX, 0, 255, 1430, 1570);
-  if(ps2x.Button(PSB_PAD_LEFT) || ps2x.Button(PSB_PAD_RIGHT) || bas_servopulse>1520 || bas_servopulse<1480){
+  float LX = (ps2x.Analog(PSS_LX));  //Create variable LX for left stick analog values
+  int bas_servopulse = map(LX, 0, 255, 1430, 1570); //Map the left analog stick values to the range of values the servo accepts and then save it as the base servo pulse value
+  //If any of these values are true, check the D-Pad, if it is being pressed left or right, slowly rotate the base in that direction. If not, check the base servopulse value, if it is above or below the set range, send the value to the servo, rotating the base left or right 
+  if(ps2x.Button(PSB_PAD_LEFT) || ps2x.Button(PSB_PAD_RIGHT) || bas_servopulse>1520 || bas_servopulse<1480){ //remember, bas_servopulse corresponds to the left analog stick
     //Fine Controll on D-Pad
     if(ps2x.Button(PSB_PAD_LEFT) || ps2x.Button(PSB_PAD_RIGHT)){
       if(ps2x.Button(PSB_PAD_RIGHT)) myssc.servoMove(BAS_SERVO, 1515);
@@ -135,7 +136,9 @@ byte PSX_poll( void )
     //Left Stick X
     else{
       if(bas_servopulse>1520 || bas_servopulse<1480){
+        //If gripper is up high, move normal speed 
         if(armdata.z_coord >= 200.00) myssc.servoMove(BAS_SERVO, bas_servopulse);
+        //If gripper is down low, remap the base servopulse value to a smaller range and send the value to the base servo so the base rotates slower
         if(armdata.z_coord < 200.00) 
         {
           int slow_bas_servopulse = map(bas_servopulse, 1430, 1570, 1470, 1530);
@@ -144,9 +147,9 @@ byte PSX_poll( void )
       }
     }
   }
-  else myssc.servoMove(BAS_SERVO, 1500);
+  else myssc.servoMove(BAS_SERVO, 1500); //If none of the values are true, set the rotation to neutral so it does not move
 
-  //
+  //Not sure of difference between gripper angle and wrist angle
   float RX = (ps2x.Analog(PSS_RX));
   int RXm = map(RX, 0, 255, 5, -5);
   if((RXm >2) || (RXm<-2))
@@ -177,7 +180,7 @@ byte PSX_poll( void )
   if((LYm >3) || (LYm<-3))
     armdata.y_coord += ( LYm );
 
-  //Wrist Rotate Re-Center
+  //Wrist Rotate Re-Center (when PSX button R3 is pressed)
   if(ps2x.Button(PSB_R3))
     armdata.wrist_rotate = 1500;
 
@@ -194,7 +197,7 @@ byte PSX_poll( void )
   if(armdata.gripper_servo < 500 ) armdata.gripper_servo = 500;
   if(armdata.gripper_servo > 2600 ) armdata.gripper_servo = 2600;
 
-  //Pre-Programed Positions
+  //Pre-Programed Positions, enabled by pressing R1 and the corresponding second button - these are set emperically through testing desired positions and copying from the Arduino serial log on the computer
   ps2x.read_gamepad();
   ps2x.read_gamepad(false, vibrate);
   if(ps2x.Button(PSB_R1))
@@ -331,7 +334,7 @@ byte PSX_poll( void )
 }
 
 
-/* arm positioning routine utilizing inverse kinematics */
+/* Arm positioning routine utilizing inverse kinematics from circuits@home */
 /* z is height, y is distance from base center out, x is side to side. y,z can only be positive */
 //void set_arm( uint16_t x, uint16_t y, uint16_t z, uint16_t grip_angle )
 void set_arm( float x, float y, float z, float grip_angle_d )
