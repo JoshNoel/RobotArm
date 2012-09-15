@@ -3,14 +3,15 @@
 
 #include "Arduino.h"
 
+#define ftl(x) ((x)>=0?(long)((x)+0.5):(long)((x)-0.5))  //float to long conversion
+
 class InverseKinematics
 {
   public:
-    Morse(int pin);
-    void dot();
-    void dash();
+
   private:
-    int _pin;
+
+    
 };
 
 #endif

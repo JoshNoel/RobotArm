@@ -1,61 +1,37 @@
-/* Servo control for 3 jointed robot arm (shoulder, elbow, wrist)*/
+//Test for Inverse Kinematics for 3 jointed (shoulder, elbow, wrist) robotic arm
+//Designed for Lynxmotion AL5D robot arm - a different dimention robot arm will it's arm dimension, and the movement may be too small or large, so some altering may be required
+
+//Requires Lynxmotion SSC32 Servo Driver and SSC32 Driver
+#include <SSC32.h>
+SSC32 myssc = SSC32(); // Enable SSC32 Servo Controller
  
-/* Arm dimensions( mm ) */
+// Arm dimensions( mm )
 #define BASE_HGT 67.31      //base hight 2.65"
 #define HUMERUS 146.05      //shoulder-to-elbow "bone" 5.75"
 #define ULNA 187.325        //elbow-to-wrist "bone" 7.375"
 #define GRIPPER 100.00          //gripper (incl.heavy duty wrist rotate mechanism) length 3.94"
- 
-#define ftl(x) ((x)>=0?(long)((x)+0.5):(long)((x)-0.5))  //float to long conversion
- 
-/* Servo names*/
-/* Base servo HS-485HB */
-#define BAS_SERVO 0
-/* Shoulder Servo HS-5745-MG */
-#define SHL_SERVO 1
-/* Elbow Servo HS-5745-MG */
-#define ELB_SERVO 2
-/* Wrist servo HS-645MG */
-#define WRI_SERVO 3
-/* Wrist rotate servo HS-485HB */
-#define WRO_SERVO 4
-/* Gripper servo HS-422 */
-#define GRI_SERVO 5
- 
-/* pre-calculations */
-float hum_sq = HUMERUS*HUMERUS;
-float uln_sq = ULNA*ULNA;
- 
-ServoShield servos;                       //ServoShield object
- 
+
 void setup()
 {
-  servos.setbounds( BAS_SERVO, 900, 2100 );
-  servos.setbounds( SHL_SERVO, 1000, 2100 );
-  servos.setbounds( ELB_SERVO, 900, 2100 );
-  servos.setbounds( WRI_SERVO, 600, 2400 );
-  servos.setbounds( WRO_SERVO, 600, 2400 );
-  servos.setbounds( GRI_SERVO, 600, 2400 );
-  /**/
-  servos.start();                         //Start the servo shield
-  servo_park();
-  Serial.begin( 115200 );
+  //Begin communication with SSC32 and Computer
+  myssc.begin(9600);  //Communicate with servo controller - Note: Servo Controller Library modified to use serial1
+  Serial.begin(9600); //Communicate to computer via USB Serial
   Serial.println("Start");
+  //Set arm to default position
+  arm_park();
   delay( 500 );
 }
  
 void loop()
 {
- 
   //zero_x();
   //line();
   circle();
  }
  
-/* arm positioning routine utilizing inverse kinematics */
-/* z is height, y is distance from base center out, x is side to side. y,z can only be positive */
-//void set_arm( uint16_t x, uint16_t y, uint16_t z, uint16_t grip_angle )
-void set_arm( float x, float y, float z, float grip_angle_d )
+//Arm positioning routine utilizing inverse kinematics - calculates shl_servopulse, elb_servopulse, and wri_servopulse
+//z is height, y is distance from base center out, x is side to side. y,z can only be positive
+void set_arm_calc( float x, float y, float z, float grip_angle_d )
 {
   float grip_angle_r = radians( grip_angle_d );    //grip angle in radians for use in calculations
   /* Base angle and radial distance from x,y coordinates */
@@ -88,21 +64,14 @@ void set_arm( float x, float y, float z, float grip_angle_d )
   float wri_angle_d = ( grip_angle_d - elb_angle_dn ) - shl_angle_d;
  
   /* Servo pulses */
-  float bas_servopulse = 1500.0 - (( degrees( bas_angle_r )) * 11.11 );
-  float shl_servopulse = 1500.0 + (( shl_angle_d - 90.0 ) * 6.6 );
-  float elb_servopulse = 1500.0 -  (( elb_angle_d - 90.0 ) * 6.6 );
-  float wri_servopulse = 1500 + ( wri_angle_d  * 11.1 );
- 
-  /* Set servos */
-  servos.setposition( BAS_SERVO, ftl( bas_servopulse ));
-  servos.setposition( WRI_SERVO, ftl( wri_servopulse ));
-  servos.setposition( SHL_SERVO, ftl( shl_servopulse ));
-  servos.setposition( ELB_SERVO, ftl( elb_servopulse ));
+  float shl_servopulse = ftl(1450.0 + (( shl_angle_d - 90.0 ) * 6.6 ));
+  float elb_servopulse = ftl(1450.0 -  (( elb_angle_d - 90.0 ) * 6.6 ));
+  float wri_servopulse = ftl(1550 + ( wri_angle_d  * 11.1 ));
  
 }
  
 /* move servos to parking position */
-void servo_park()
+void arm_park()
 {
   servos.setposition( BAS_SERVO, 1715 );
   servos.setposition( SHL_SERVO, 2100 );
@@ -116,11 +85,11 @@ void servo_park()
 void zero_x()
 {
   for( double yaxis = 150.0; yaxis < 356.0; yaxis += 1 ) {
-    set_arm( 0, yaxis, 127.0, 0 );
+    set_arm_calc( 0, yaxis, 127.0, 0 );
     delay( 10 );
   }
   for( double yaxis = 356.0; yaxis > 150.0; yaxis -= 1 ) {
-    set_arm( 0, yaxis, 127.0, 0 );
+    set_arm_calc( 0, yaxis, 127.0, 0 );
     delay( 10 );
   }
 }
@@ -129,11 +98,11 @@ void zero_x()
 void line()
 {
     for( double xaxis = -100.0; xaxis < 100.0; xaxis += 0.5 ) {
-      set_arm( xaxis, 250, 100, 0 );
+      set_arm_calc( xaxis, 250, 100, 0 );
       delay( 10 );
     }
     for( float xaxis = 100.0; xaxis > -100.0; xaxis -= 0.5 ) {
-      set_arm( xaxis, 250, 100, 0 );
+      set_arm_calc( xaxis, 250, 100, 0 );
       delay( 10 );
     }
 }
@@ -146,7 +115,7 @@ void circle()
   for( float angle = 0.0; angle < 360.0; angle += 1.0 ) {
       yaxis = RADIUS * sin( radians( angle )) + 200;
       zaxis = RADIUS * cos( radians( angle )) + 200;
-      set_arm( 0, yaxis, zaxis, 0 );
+      set_arm_calc( 0, yaxis, zaxis, 0 );
       delay( 1 );
   }
 }
