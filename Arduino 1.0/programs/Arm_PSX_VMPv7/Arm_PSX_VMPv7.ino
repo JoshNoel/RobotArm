@@ -1,95 +1,91 @@
-/* AL5D robotic arm manual control using PSX controller. Servo controller by Lynxmotion SSC32 servo controller*/
-//Include the SSC32, SPI, and PS2X libraries
-#include <SSC32.h>
-#include <SPI.h>
-#include <PS2X_lib.h>
+//AL5D robotic arm manual control using PSX (PS2) controller. Servo controller by Lynxmotion SSC32 servo controller.
 
-//Enable Devices/Classes
-SSC32 myssc = SSC32(); // SSC32 Servo Controller
-PS2X ps2x; // create PS2 Controller Class
+/////////
+// Setup 
+/////////
 
-//PS2 Controller Variables
-int error = 0;
-byte type = 0;
-byte vibrate = 0;
+//Enable SSC32 and PSX
+   //Include the SSC32, SPI, and PS2X libraries
+   #include <SSC32.h>
+   #include <SPI.h>
+   #include <PS2X_lib.h>
 
-/* Arm dimensions( mm ) */
-#define BASE_HGT 98.31     //base hight 2.65"
-#define HUMERUS 265.50     //shoulder-to-elbow "bone" 5.75"        (350.00 for long, 265.50 for medium, 146.50 for none)
-#define ULNA 326.00        //elbow-to-wrist "bone"                  (Long: 326.39, Medium: 170.00)
-#define GRIPPER 0.00       //gripper + medium duty wrist 3.94"      (With Gripper: 11.00)
+   //Enable Devices/Classes
+   SSC32 myssc = SSC32(); // SSC32 Servo Controller
+   PS2X ps2x;             // create PS2 Controller Class
 
-//Float to long conversion
-#define ftl(x) ((x)>=0?(long)((x)+0.5):(long)((x)-0.5))
+//Set Default Values and constants
+   //PSX Controller Variables
+   int error = 0;
+   byte type = 0;
+   byte vibrate = 0;
 
-/* Servo names/numbers on SSC32 Controller*/
-/* Base servo HS-485HB */
-#define BAS_SERVO 16
-/* Shoulder Servo HS-5745-MG */
-#define SHL_SERVO 17
-/* Elbow Servo HS-5745-MG */
-#define ELB_SERVO 18
-/* Wrist servo HS-645MG */
-#define WRI_SERVO 19
-/* Wrist rotate servo HS-485HB */
-#define WRO_SERVO 20
-/* Gripper servo HS-422 */
-#define GRI_SERVO 21
+   //Float to long conversion
+   #define ftl(x) ((x)>=0?(long)((x)+0.5):(long)((x)-0.5))
 
-/* pre-calculations */
-float hum_sq = HUMERUS*HUMERUS;
-float uln_sq = ULNA*ULNA;
+   //Pre-calculations
+   float hum_sq = HUMERUS*HUMERUS;
+   float uln_sq = ULNA*ULNA;
 
-/* Arm data structure */
-struct {
-  float x_coord;           // X coordinate of the gripper tip (Side to side position)
-  float y_coord;           // Y coordinate of the gripper tip (Distance out from base)
-  float z_coord;           //Z coordinate of the gripper tip (Height)
-  float gripper_angle;     //gripper angle
-  int16_t gripper_servo;   //gripper servo pulse duration 
-  int16_t wrist_rotate;    //wrist rotate servo pulse duration
-} 
-armdata;
+   //Servo names and numbers on SSC32
+   #define BAS_SERVO 16    //Base servo HS-485HB
+   #define SHL_SERVO 17    //Shoulder Servo HS-5745-MG
+   #define ELB_SERVO 18    //Elbow Servo HS-5745-MG
+   #define WRI_SERVO 19    //Wrist servo HS-645MG
+   #define WRO_SERVO 20    //Wrist rotate servo HS-485HB
+   #define GRI_SERVO 21    //Gripper servo HS-422
+
+   //Arm data structure (not sure what this is for)
+   struct {
+     float x_coord;           // X coordinate of the gripper tip (Side to side position)
+     float y_coord;           // Y coordinate of the gripper tip (Distance out from base)
+     float z_coord;           //Z coordinate of the gripper tip (Height)
+     float gripper_angle;     //gripper angle
+     int16_t gripper_servo;   //gripper servo pulse duration 
+     int16_t wrist_rotate;    //wrist rotate servo pulse duration
+   } 
+   armdata;
+
+   //Arm dimensions (mm)
+   #define BASE_HGT 98.31     //base hight 2.65"
+   #define HUMERUS 265.50     //shoulder-to-elbow "bone" 5.75"        (350.00 for long, 265.50 for medium, 146.50 for none)
+   #define ULNA 326.00        //elbow-to-wrist "bone"                 (Long: 326.39, Medium: 170.00)
+   #define GRIPPER 0.00       //gripper + medium duty wrist 3.94"     (With Gripper: 11.00)
+
 
 void setup()
 {
-  //Servo maximum and minimum rotations from origional circuits@home ionverse kinematics code, commented out to disable
-  /*
-   servos.setbounds( BAS_SERVO, 900, 2100 );
-   servos.setbounds( SHL_SERVO, 1000, 2100 );
-   servos.setbounds( ELB_SERVO, 900, 2100 );
-   servos.setbounds( WRI_SERVO, 600, 2400 );
-   servos.setbounds( WRO_SERVO, 600, 2400 );
-   servos.setbounds( GRI_SERVO, 890, 2100 );
-   Note: implement constrain(x, a, b)
-   */
+//Begin communication with SSC32 and Computer
+   myssc.begin(9600);  //Communicate with servo controller - Note: Servo Controller Library modified to use serial1
+   Serial.begin(9600); //Communicate to computer via USB Serial - Used for position feedback to computer to find positions
 
-  //Begin communication with SSC32 and Computer
-  myssc.begin(9600);  //Communicate with servo controller - Note: Servo Controller Library modified to use serial1
-  Serial.begin(9600); //Communicate to computer via USB Serial - Used for position feedback to computer to find positions
+//Configuring PS2 controller and checking for errors
+   error = ps2x.config_gamepad(8,10,12,7, false, false);   //setup pins and settings:  GamePad(clock, command, attention, data, Pressures?, Rumble?) check for error
+   //Error print removed because it iterferes with serial connection to SSC 32
+   type = ps2x.readType();
 
-  //Configuring PS2 controller and checking for errors
-  error = ps2x.config_gamepad(8,10,12,7, false, false);   //setup pins and settings:  GamePad(clock, command, attention, data, Pressures?, Rumble?) check for error
-  //Error print removed because it iterferes with serial connection to SSC 32
-  type = ps2x.readType();
+//Start Position of gripper using X (rotation speed), Y cordinates (horizontal out from base), and Z (height)
+   set_arm( armdata.x_coord = 0, armdata.y_coord = -76.00, armdata.z_coord = 652.00, armdata.gripper_angle = 0 ); //Use (y=-76, z=652) for long, (y=0, z=680) for medium, (y =-200, z=350) for no extension
+   myssc.servoMove( WRO_SERVO, armdata.wrist_rotate = 1500 );
+   myssc.servoMove( GRI_SERVO, armdata.gripper_servo = 890 );
 
-  //Start Position of gripper using X (which translates to rotation speed) and Y cordinates (horizontal - distance out from base) and Z (height - distance vertically from base)
-  set_arm( armdata.x_coord = 0, armdata.y_coord = -76.00, armdata.z_coord = 652.00, armdata.gripper_angle = 0 ); //Use (y=-76, z=652) for long, (y=0, z=680) for medium, (y =-200, z=350) for no extension
-  myssc.servoMove( WRO_SERVO, armdata.wrist_rotate = 1500 );
-  myssc.servoMove( GRI_SERVO, armdata.gripper_servo = 890 );
-
-  //Controller Ready Loop - operator can prepare the controller by turning on analog mode and then hitting select. If not, the controller will report false values and the robot will act sporatically and out of controll
-Setup:
-  //Check PSX state
-  ps2x.read_gamepad();
-  ps2x.read_gamepad(false, vibrate);
-  //Press select to unlock movement
-  if(ps2x.Button(PSB_SELECT))
-  {
+//Controller Ready Loop - operator prepares controller by turning on analog mode and hitting select. If not, the controller will report false values and the robot will spin around and be uncontrollable
+  Setup:
+    //Check PSX state
+      ps2x.read_gamepad();
+      ps2x.read_gamepad(false, vibrate);
+    //Press select to unlock movement
+      if(ps2x.Button(PSB_SELECT))
+      {
+      }
+      else
+        goto Setup;
   }
-  else
-    goto Setup;
-}
+
+
+////////////////
+// Main Program
+////////////////
 
 //Main loop of program - updates gripper cordinates according to new variable values and reports them to computer
 void loop()
@@ -97,13 +93,14 @@ void loop()
   if(error == 1) //skip loop if no controller found
     return; 
 
+//Send gripper values to SSC32
   //Update arm to X, Y, and Z positions for Gripper Angle
   set_arm( armdata.x_coord, armdata.y_coord, armdata.z_coord, armdata.gripper_angle );
   //Update to Wrist and Grip positions
   myssc.servoMove( WRO_SERVO, armdata.wrist_rotate );
   myssc.servoMove( GRI_SERVO, armdata.gripper_servo );
 
-  //Send Computer Coordinates
+//Send Computer Coordinates
   Serial.println();
   Serial.print("Y (Depth):");
   Serial.println( armdata.y_coord );
@@ -112,18 +109,18 @@ void loop()
   Serial.print("Wrist Angle:");
   Serial.println( armdata.gripper_angle );
 
-  //Run PSX_poll to get controller readings
+//Run PSX_poll to get controller readings
   PSX_poll();
 }
 
-/* Poll PS2 (PSX) controller using Get Report and fill arm data structure */
+//Poll PSX controller using Get Report and fill arm data structure
 byte PSX_poll( void )
 {
-  //Check PSX state
+//Check PSX state
   ps2x.read_gamepad();
   ps2x.read_gamepad(false, vibrate);
 
-  //Base Rotate
+//Base Rotate
   float LX = (ps2x.Analog(PSS_LX));  //Create variable LX for left stick analog values
   int bas_servopulse = map(LX, 0, 255, 1430, 1570); //Map the left analog stick values to the range of values the servo accepts and then save it as the base servo pulse value
   //If any of these values are true, check the D-Pad, if it is being pressed left or right, slowly rotate the base in that direction. If not, check the base servopulse value, if it is above or below the set range, send the value to the servo, rotating the base left or right 
