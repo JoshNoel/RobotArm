@@ -23,10 +23,6 @@
    //Float to long conversion
    #define ftl(x) ((x)>=0?(long)((x)+0.5):(long)((x)-0.5))
 
-   //Pre-calculations
-   float hum_sq = HUMERUS*HUMERUS;
-   float uln_sq = ULNA*ULNA;
-
    //Servo names and numbers on SSC32
    #define BAS_SERVO 16    //Base servo HS-485HB
    #define SHL_SERVO 17    //Shoulder Servo HS-5745-MG
@@ -51,7 +47,10 @@
    #define HUMERUS 265.50     //shoulder-to-elbow "bone" 5.75"        (350.00 for long, 265.50 for medium, 146.50 for none)
    #define ULNA 326.00        //elbow-to-wrist "bone"                 (Long: 326.39, Medium: 170.00)
    #define GRIPPER 0.00       //gripper + medium duty wrist 3.94"     (With Gripper: 11.00)
-
+   
+   //Pre-calculations
+   float hum_sq = HUMERUS*HUMERUS;
+   float uln_sq = ULNA*ULNA;
 
 void setup()
 {
@@ -83,11 +82,11 @@ void setup()
   }
 
 
-////////////////
-// Main Program
-////////////////
+/////////////
+// Main Loop
+/////////////
 
-//Main loop of program - updates gripper cordinates according to new variable values and reports them to computer
+//Updates gripper cordinates according to new variable values and reports them to computer
 void loop()
 {
   if(error == 1) //skip loop if no controller found
@@ -112,6 +111,11 @@ void loop()
 //Run PSX_poll to get controller readings
   PSX_poll();
 }
+
+
+/////////////
+// Controlls
+/////////////
 
 //Poll PSX controller using Get Report and fill arm data structure
 byte PSX_poll( void )
@@ -330,6 +334,10 @@ byte PSX_poll( void )
     arm_park();
 }
 
+
+/////////////
+// Back Code
+/////////////
 
 /* Arm positioning routine utilizing inverse kinematics from circuits@home */
 /* z is height, y is distance from base center out, x is side to side. y,z can only be positive */
