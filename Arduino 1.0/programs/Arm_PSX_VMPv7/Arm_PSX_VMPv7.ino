@@ -124,6 +124,9 @@ byte PSX_poll( void )
   ps2x.read_gamepad();
   ps2x.read_gamepad(false, vibrate);
 
+//Direct Controll
+//////////////////
+
 //Base Rotate
   float LX = (ps2x.Analog(PSS_LX));  //Create variable LX for left stick analog values
   int bas_servopulse = map(LX, 0, 255, 1430, 1570); //Map the left analog stick values to the range of values the servo accepts and then save it as the base servo pulse value
@@ -198,7 +201,10 @@ byte PSX_poll( void )
   if(armdata.gripper_servo < 500 ) armdata.gripper_servo = 500;
   if(armdata.gripper_servo > 2600 ) armdata.gripper_servo = 2600;
 
-  //Pre-Programed Positions, enabled by pressing R1 and the corresponding second button - these are set emperically through testing desired positions and copying from the Arduino serial log on the computer
+//Preset Positions
+///////////////////
+
+//Enabled by pressing R1 and the corresponding second button - these are set emperically through testing desired positions and copying from the Arduino serial log on the computer
   ps2x.read_gamepad();
   ps2x.read_gamepad(false, vibrate);
   if(ps2x.Button(PSB_R1))
