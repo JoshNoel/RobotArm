@@ -1,4 +1,9 @@
-// AL5D robotic arm manual control using PSX (PS2) controller. Servo controller by Lynxmotion SSC32 servo controller.
+// AL5D robotic arm control using PS2 controller. Servo controll by Lynxmotion SSC32 servo controller.
+
+/* The commenting in this code is intended for someone with little to no experience. Between these comments and beginner
+   guides online, you should be able to understand most of the code, except for parts that would not need to be changed.
+   Most changes would occur down in the controlls, which should be easy to understand (with help of library instructions).
+   The Arduino serial monitor can be used to get the robot's position, when connected to the computer via USB. */
 
 /////////
 // Setup 
@@ -11,17 +16,14 @@
 
 // Enable Devices/Classes
 SSC32 myssc = SSC32();  // SSC32 Servo Controller
-PS2X ps2x;              // create PS2 Controller Class
+PS2X ps2x;              // PS2 Controller Class
 
-// Set PSX Controller Variables
+// Define PSX Controller Variables
 int error = 0;
 byte type = 0;
 byte vibrate = 0;
 
-// Float to long conversion
-#define ftl(x) ((x)>=0?(long)((x)+0.5):(long)((x)-0.5))
-
-// Servo names and port numbers on SSC32
+// Servo names and connecting port numbers on SSC32
 #define BAS_SERVO 16           // Base servo HS-485HB
 #define SHL_SERVO 17           // Shoulder Servo HS-5745-MG
 #define ELB_SERVO 18           // Elbow Servo HS-5745-MG
@@ -29,19 +31,27 @@ byte vibrate = 0;
 #define WRIST_ROTATE_SERVO 20  // Wrist rotate servo HS-485HB
 #define GRIP_SERVO 21          // Gripper servo HS-422
 
-// Arm position variables
-float x;                    // X coordinate of the gripper tip (Side to side position)
-float y;                    // Y coordinate of the gripper tip (Distance out from base)
-float z;                    // Z coordinate of the gripper tip (Height)
-float wristAngle;           // Gripper angle
-int twist;  // Wrist rotate servo pulse
-int grip;                   // Gripper servo pulse
+// Define arm position variables (doing so here makes them global values)
+int x;              // X coordinate of the gripper tip (Side to side position AKA base rotation)
+float y;            // Y coordinate of the gripper tip (Distance out from base)
+float z;            // Z coordinate of the gripper tip (Height)
+float wristAngle;   // Gripper angle
+int twist;          // Wrist rotate servo pulse
+int grip;           // Gripper servo pulse
+
+// Past arm positions (used to recongnise change in position)
+int oldx = 0;
+float oldy = 0;
+float oldz = 0;
+float oldwristAngle = 0;
+int oldtwist = 0;
+int oldgrip = 0;
 
 // Arm dimensions (mm)
 #define BASE_HGT 98.31  // Base hight: 2.65"
 #define HUMERUS 265.50  // Shoulder-to-elbow "bone": 5.75"    (350.0 for long, 265.50 for medium, 146.50 for none)
 #define ULNA 326.0      // Elbow-to-wrist "bone":             (Long: 326.39, Medium: 170.0)
-#define GRIPPER 0.0     // Gripper + medium duty wrist: 3.94" (With Gripper: 11.0) - Currently set to 0 to simplify movement
+#define GRIPPER 0.0     // Gripper + medium duty wrist: 3.94" (With Gripper: 11.0) Currently set to 0 to simplify movement
 
 // PSX controller analog stick dead zones
 #define RIGHT_ANALOG_X_DEADZONE 8.0
@@ -60,28 +70,30 @@ int grip;                   // Gripper servo pulse
 float hum_sq = HUMERUS*HUMERUS;
 float uln_sq = ULNA*ULNA;
 
-void setup()
-{
+// Float to long conversion
+#define ftl(x) ((x)>=0?(long)((x)+0.5):(long)((x)-0.5))
+
+void setup() {
   // Begin communication with SSC32 and computer
-  myssc.begin(9600);   // Communicate with servo controller - Note: Servo Controller Library modified to use serial1 (serial one) instead of serial
+  myssc.begin(9600);   // Communicate with servo controller. Note: Servo Controller Library modified to use serial1 (serial one) instead of serial
   Serial.begin(9600);  // Communicate to computer via USB Serial - Used for position feedback to computer to find positions
 
   // Configuring PS2 controller and checking for errors
   error = ps2x.config_gamepad( 8, 10, 12, 7, false, false);  // Setup PSX pins and settings and then check for error, following GamePad(clock, command, attention, data, Pressures?, Rumble?)
   type = ps2x.readType();
 
-  // Start Position of gripper using X (rotation speed), Y cordinates (horizontal out from base), and Z (height)
+  // Start Position
   // Use (y=-76, z=652) for long, (y=0, z=680) for medium, (y =-200, z=350) for no extension
-  setArmTo( x = 0, y = -76.0, z = 652.0, wristAngle = 0, twist = 0, grip = 10 );
+  setArmTo( x, y = -76.0, z = 652.0, wristAngle = 0, twist = 0, grip = 10 );
 
   // Controller Ready Loop - operator prepares controller by turning on analog mode and hitting select to start
-  do
-  {
+  do {
     // Check PSX state
     ps2x.read_gamepad();
     ps2x.read_gamepad(false, vibrate);
   } while( !ps2x.Button(PSB_SELECT));  // Continue checking the status until select is pressed
-  // Start program
+  
+  // Start program (go to loop) now that setup is done. This is done automatically.
 }
 
 
@@ -90,8 +102,7 @@ void setup()
 /////////////
 
 // Updates gripper cordinates according to new variable values and reports them to computer
-void loop()
-{
+void loop() {
   // Quit program if no controller is found or it is disconnected
   if(error == 1)  return;
 
@@ -99,32 +110,18 @@ void loop()
   setArmTo( x, y, z, wristAngle, twist, grip );
 
   // Send Computer Coordinates, formatted to easily copy and paste back into code
-  Serial.print("\n\nsetArmTo( x = ");
-  Serial.print( x );
-  Serial.print(", y = ");
-  Serial.print( y );
-  Serial.print(", z = ");
-  Serial.print( z );
-  Serial.print(", wristAngle = ");
-  Serial.print( wristAngle );
-  Serial.print(", twist = ");
-  Serial.print( twist );
-  Serial.print(", grip = ");
-  Serial.print( grip );
-  Serial.print(" );");
+  printNewArmPosition();
 
   // Run PSX_poll to get controller values
   PSX_poll();
 }
 
-
 /////////////
 // Controlls
 /////////////
 
-// Poll PSX controller using Get Report and fill arm data structure
-byte PSX_poll( void )
-{
+// Read PSX controller state and then make the apropriate movements
+byte PSX_poll( void ) {
   // Check PSX state
   ps2x.read_gamepad();
   ps2x.read_gamepad(false, vibrate);
@@ -135,21 +132,17 @@ byte PSX_poll( void )
   float leftAnalogX = map(leftAnalogXRaw, 0, 255, ANALOG_MAX, ANALOG_MIN);
 
   // If left or right is pressed (and R1 is not), then move slowly in that direction
-  if(ps2x.Button(PSB_PAD_LEFT)  ||  ps2x.Button(PSB_PAD_RIGHT)  &&  !ps2x.Button(PSB_R1) )
-  {
+  if(ps2x.Button(PSB_PAD_LEFT)  ||  ps2x.Button(PSB_PAD_RIGHT)  &&  !ps2x.Button(PSB_R1) ) {
     if(ps2x.Button(PSB_PAD_RIGHT))  myssc.servoMove(BAS_SERVO, CENTER+15);
     if(ps2x.Button(PSB_PAD_LEFT))  myssc.servoMove(BAS_SERVO, CENTER-15);
   }
   // Otherwise, if the baseServoPulse is outside of the deadzone, move acording to height
-  else if( leftAnalogX < -LEFT_ANALOG_X_DEADZONE  ||  leftAnalogX > LEFT_ANALOG_X_DEADZONE )
-  {
-    if( z >= 200.0 )  // If gripper is up high, move normal speed
-    {
+  else if( leftAnalogX < -LEFT_ANALOG_X_DEADZONE  ||  leftAnalogX > LEFT_ANALOG_X_DEADZONE ) {
+    if( z >= 200.0 ) {
       int baseServoPulse = map(leftAnalogXRaw, 0, 255, CENTER-70, CENTER+70); // Map the left analog stick values to the range of values the servo accepts
       myssc.servoMove(BAS_SERVO, baseServoPulse);  
     }
-    if( z < 200.0 )  // If gripper is down low, remap the base servopulse value to a smaller range and send the value to the base servo so the base rotates slower
-    {
+    if( z < 200.0 ) {  // If gripper is down low, remap the base servopulse value to a smaller range and send the value to the base servo so the base rotates slower
       int slowBaseServoPulse = map(leftAnalogXRaw, 0, 255, CENTER-30, CENTER+30);
       myssc.servoMove(BAS_SERVO, slowBaseServoPulse);
     }
@@ -163,7 +156,9 @@ byte PSX_poll( void )
   // If the Right Analog stick is moved outside of the deadzone in the X direction, increase or decrease the wrist angle
   float rightAnalogXRaw = ps2x.Analog(PSS_RX);
   int rightAnalogX = map(rightAnalogXRaw, 0, 255, ANALOG_MAX, ANALOG_MIN);  // Map the raw controller data to a more usable range
-  if( rightAnalogX < -RIGHT_ANALOG_X_DEADZONE  ||  rightAnalogX > RIGHT_ANALOG_X_DEADZONE )  wristAngle -= (rightAnalogX * .25);  // .25 is a speed dampening factor
+  if( rightAnalogX < -RIGHT_ANALOG_X_DEADZONE  ||  rightAnalogX > RIGHT_ANALOG_X_DEADZONE ) {
+    wristAngle -= (rightAnalogX * .25);  // .25 is a speed dampening factor
+  }
 
 
   // IDK if z or y, seems like both
@@ -171,8 +166,7 @@ byte PSX_poll( void )
   float rightAnalogYRaw = ps2x.Analog(PSS_RY);
   int rightAnalogY = map(rightAnalogYRaw, 0, 255, ANALOG_MAX, ANALOG_MIN);  // Map the raw controller data to a more usable range
   // If the Left Analog X is inside the deadzone, then fine controll of gripper's distance from the base may be used
-  if( leftAnalogX > -LEFT_ANALOG_X_DEADZONE  &&  leftAnalogX < LEFT_ANALOG_X_DEADZONE )
-  {
+  if( leftAnalogX > -LEFT_ANALOG_X_DEADZONE  &&  leftAnalogX < LEFT_ANALOG_X_DEADZONE ) {
     // Fine controll of gripper's distance from the base using D-Pad
     if(ps2x.Button(PSB_PAD_UP))  y += 6;
     if(ps2x.Button(PSB_PAD_DOWN))  y -= 6;
@@ -191,15 +185,16 @@ byte PSX_poll( void )
   // Wrist Rotate
   ////////////////
   // If R1 is not pressed (Preset position button)
-  if(!ps2x.Button(PSB_R1))
-  {
+  if(!ps2x.Button(PSB_R1)) {
     if(ps2x.Button(PSB_GREEN))  twist -= 1;  // X Button
     if(ps2x.Button(PSB_BLUE))   twist += 1;  // Circle Button
-    // Check Limits
+    // Limit twist between -10 and 10
     twist = constrain(twist, -10, 10);
   }
   // Wrist Rotate Re-Center (R3)
-  if(ps2x.Button(PSB_R3))  twist = 0;
+  if(ps2x.Button(PSB_R3)) {
+    twist = 0;
+  }
 
   // Gripper Open/Close (R2/L2)
   /////////////////////////////
@@ -209,53 +204,51 @@ byte PSX_poll( void )
   // Gripper opening stop points
   grip = constrain(grip, 0, 10);
 
-
   // Preset Positions
   ///////////////////
 
   // Enabled by pressing R1 and then one of the below buttons at the same time
   ps2x.read_gamepad();  // Call again to ensure information is still current
   ps2x.read_gamepad(false, vibrate);
-  if(ps2x.Button(PSB_R1))
-  {
-    if(ps2x.Button(PSB_RED)){  // Circle Button (Batteries)
-      setArmTo( x = 0, y = 170.0, z = 190.0, wristAngle = -41.0, twist = 1500, grip);
-      setArmTo( x = 0, y = 170.0, z = 190.0, wristAngle = -41.0, twist, grip);
+  if(ps2x.Button(PSB_R1)) {
+    if(ps2x.Button(PSB_RED)) {  // Circle Button (Batteries)
+      setArmTo( x, y = 170.0, z = 190.0, wristAngle = -41.0, twist = 1500, grip);
+      setArmTo( x, y = 170.0, z = 190.0, wristAngle = -41.0, twist, grip);
     }
 
-    if(ps2x.Button(PSB_BLUE)){  // X Button ()
-      setArmTo( x = 0, y = 241.0, z = 136.0, wristAngle = -52.0, twist, grip);
+    if(ps2x.Button(PSB_BLUE)) {  // X Button ()
+      setArmTo( x, y = 241.0, z = 136.0, wristAngle = -52.0, twist, grip);
       myssc.servoMove( WRIST_ROTATE_SERVO, twist = 1500 );
     }
 
-    if(ps2x.Button(PSB_PINK)){  // Square Button ()
-      if(z < 308.0  &&  y > 300){
+    if(ps2x.Button(PSB_PINK)) {  // Square Button ()
+      if(z < 308.0  &&  y > 300) {
         delay(100);
-        setArmTo( x = 0, y, z = 348.0, wristAngle, twist, grip);
+        setArmTo( x, y, z = 348.0, wristAngle, twist, grip);
         delay(100);
-        setArmTo( x = 0, y = 241.0, z = 301.0, wristAngle, twist, grip);
+        setArmTo( x, y = 241.0, z = 301.0, wristAngle, twist, grip);
         delay(100);
       }
-      setArmTo( x = 0, y = 241.0, z = 136.0, wristAngle = -52.0, twist, grip);
+      setArmTo( x, y = 241.0, z = 136.0, wristAngle = -52.0, twist, grip);
       delay(300);
-      setArmTo( x = 0, y = 206.0, z = 108.0, wristAngle = -59.0, twist, grip);
+      setArmTo( x, y = 206.0, z = 108.0, wristAngle = -59.0, twist, grip);
       myssc.servoMove( WRIST_ROTATE_SERVO, twist = 1500 );
     }
 
-    if(ps2x.Button(PSB_GREEN)){  // Triangle Button ()
-      if(z < 308.0  &&  y > 300){
+    if(ps2x.Button(PSB_GREEN)) {  // Triangle Button ()
+      if(z < 308.0  &&  y > 300) {
         delay(100);
-        setArmTo( x = 0, y, z = 348.0, wristAngle, twist, grip);
+        setArmTo( x, y, z = 348.0, wristAngle, twist, grip);
         delay(100);
-        setArmTo( x = 0, y = 241.0, z = 301.0, wristAngle, twist, grip);
+        setArmTo( x, y = 241.0, z = 301.0, wristAngle, twist, grip);
         delay(100);
       }
-      setArmTo( x = 0, y = 200.0, z = 136.0, wristAngle = -53.0, twist, grip);
+      setArmTo( x, y = 200.0, z = 136.0, wristAngle = -53.0, twist, grip);
       myssc.servoMove( WRIST_ROTATE_SERVO, twist = 1500 );
     }
 
-    if(ps2x.Button(PSB_PAD_DOWN)){
-      setArmTo( x = 0, y, z = 234.0, wristAngle = -42.0, twist, grip);
+    if(ps2x.Button(PSB_PAD_DOWN)) {
+      setArmTo( x, y, z = 234.0, wristAngle = -42.0, twist, grip);
       delay(100);
       myssc.servoMove( WRIST_SERVO, 1679.95 );
       delay(100);
@@ -265,26 +258,26 @@ byte PSX_poll( void )
       myssc.servoMove( WRIST_ROTATE_SERVO, twist = 1500 );
     }
 
-    if(ps2x.Button(PSB_PAD_LEFT)){
-      setArmTo( x = 0, y = 284.0, z = 348.0, wristAngle, twist, grip);
+    if(ps2x.Button(PSB_PAD_LEFT)) {
+      setArmTo( x, y = 284.0, z = 348.0, wristAngle, twist, grip);
       delay(50);
       wristAngle = 47.0;
       delay(100);
-      setArmTo( x = 0, y = 401.0, z = 412.0, wristAngle = 41.0, twist, grip );
+      setArmTo( x, y = 401.0, z = 412.0, wristAngle = 41.0, twist, grip );
       myssc.servoMove( WRIST_ROTATE_SERVO, twist = 1500 );
     }
 
-    if(ps2x.Button(PSB_PAD_UP)){
-      setArmTo( x = 0, y, z = 234.0, wristAngle = -42.0, twist, grip );
+    if(ps2x.Button(PSB_PAD_UP)) {
+      setArmTo( x, y, z = 234.0, wristAngle = -42.0, twist, grip );
       delay(100);
       myssc.servoMove( WRIST_SERVO, 1679.95 );
       delay(100);
-      setArmTo( x = 0, y = 262.0, z = 239.0, wristAngle = 35.50, twist, grip );
+      setArmTo( x, y = 262.0, z = 239.0, wristAngle = 35.50, twist, grip );
       myssc.servoMove( WRIST_ROTATE_SERVO, twist = 1500 );
     }
 
-    if(ps2x.Button(PSB_START)){
-      setArmTo( x = 0, y = 200, z = 450, wristAngle, twist, grip );
+    if(ps2x.Button(PSB_START)) {
+      setArmTo( x, y = 200, z = 450, wristAngle, twist, grip );
       delay(200);
       myssc.servoMove( WRIST_SERVO, 2457.03 );
       delay(300);
@@ -294,32 +287,69 @@ byte PSX_poll( void )
       myssc.servoMove( WRIST_ROTATE_SERVO, twist = 1500 );
     }
 
-    if(ps2x.Button(PSB_L3)){
+    if(ps2x.Button(PSB_L3)) {
       y = 384;
       z = 232;
       wristAngle = -29;
       myssc.servoMove( WRIST_ROTATE_SERVO, twist = 1200 );
     }
 
-    if(ps2x.Button( PSB_L1 )){
-      setArmTo( x = 0, y = 205, z = 423, wristAngle = 62.0, twist, grip);
+    if(ps2x.Button( PSB_L1 )) {
+      setArmTo( x, y = 205, z = 423, wristAngle = 62.0, twist, grip);
       delay(300);
-      setArmTo( x = 0, y = 270.0, z = 307.0, wristAngle, twist, grip );
+      setArmTo( x, y = 270.0, z = 307.0, wristAngle, twist, grip );
       myssc.servoMove( WRIST_ROTATE_SERVO, twist = 1500 );
+    }
+    
+    // Full Automation
+    if(ps2x.Button(PSB_SELECT)) {
+      
     }
   }
 
   // Reset Position
-  if(ps2x.Button(PSB_SELECT))
-  {
-    setArmTo( x = 0, y = 200, z = 350, wristAngle = 0, twist = 1500 , grip );
+  if(ps2x.Button(PSB_SELECT)) {
+    setArmTo( x, y = 200, z = 350, wristAngle = 0, twist = 1500 , grip );
     delay(500);
+  }
+}
+
+void printNewArmPosition() {
+  int newx = x;
+  float newy = y;
+  float newz = z;
+  float newwristAngle = wristAngle;
+  int newtwist = twist;
+  int newgrip = grip;
+  
+  // If any position variable changes, print the positions
+  if ( newx != oldx || newy != oldy || newz != oldz || newwristAngle != oldwristAngle || newtwist != oldtwist || newgrip != oldgrip) {
+    int oldx = newx;
+    float oldy = newy;
+    float oldz = newz;
+    float oldwristAngle = newwristAngle;
+    int oldtwist = newtwist;
+    int oldgrip = newgrip;
+    
+    Serial.print("\n\nsetArmTo( x = ");
+    Serial.print( x );
+    Serial.print(", y = ");
+    Serial.print( y );
+    Serial.print(", z = ");
+    Serial.print( z );
+    Serial.print(", wristAngle = ");
+    Serial.print( wristAngle );
+    Serial.print(", twist = ");
+    Serial.print( twist );
+    Serial.print(", grip = ");
+    Serial.print( grip );
+    Serial.print(" );");
   }
 }
 
 
 ///////////////////////////
-// "Behind the scenes" Code
+// "Behind the scenes" Code (Dont modify)
 ///////////////////////////
 
 // Arm positioning routine utilizing inverse kinematics from circuits@home
