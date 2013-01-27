@@ -40,12 +40,12 @@ int twist;          // Wrist rotate servo pulse
 int grip;           // Gripper servo pulse
 
 // Past arm positions (used to recongnise change in position)
-int oldx = 0;
-float oldy = 0;
-float oldz = 0;
-float oldwristAngle = 0;
-int oldtwist = 0;
-int oldgrip = 0;
+int lastx;
+float lasty = 200;
+float lastz = 350;
+float lastwristAngle;
+int lasttwist;
+int lastgrip = 10;
 
 // Arm dimensions (mm)
 #define BASE_HGT 98.31  // Base hight: 2.65"
@@ -77,7 +77,8 @@ void setup() {
   // Begin communication with SSC32 and computer
   myssc.begin(9600);   // Communicate with servo controller. Note: Servo Controller Library modified to use serial1 (serial one) instead of serial
   Serial.begin(9600);  // Communicate to computer via USB Serial - Used for position feedback to computer to find positions
-
+  Serial.println("Start:");
+  
   // Configuring PS2 controller and checking for errors
   error = ps2x.config_gamepad( 8, 10, 12, 7, false, false);  // Setup PSX pins and settings and then check for error, following GamePad(clock, command, attention, data, Pressures?, Rumble?)
   type = ps2x.readType();
@@ -160,27 +161,32 @@ byte PSX_poll( void ) {
     wristAngle -= (rightAnalogX * .25);  // .25 is a speed dampening factor
   }
 
-
-  // IDK if z or y, seems like both
-  /////////////////////////////////
+  // Height (Z)
+  //////////////
   float rightAnalogYRaw = ps2x.Analog(PSS_RY);
   int rightAnalogY = map(rightAnalogYRaw, 0, 255, ANALOG_MAX, ANALOG_MIN);  // Map the raw controller data to a more usable range
+  if( rightAnalogY > RIGHT_ANALOG_Y_DEADZONE  ||  rightAnalogY < -RIGHT_ANALOG_Y_DEADZONE ) {
+    z += rightAnalogY;
+  }
+
+  // Distance from base controll (Y)
+  //////////////////////////////////
+  float leftAnalogYRaw = ps2x.Analog(PSS_LY);
+  int leftAnalogY = map(leftAnalogYRaw, 0, 255, ANALOG_MAX, ANALOG_MIN);
+  // If L1 is pressed, let right analoy y slowly change the distance from the base
+  if(ps2x.Button(PSB_L1)) {
+    y += rightAnalogY * .5; // If L1 is pressed, move at half speed
+  }
+  // Otherwise, if left analog y is outside the deadzone, let it change the distance from the base
+  else if( leftAnalogY > LEFT_ANALOG_Y_DEADZONE  ||  leftAnalogY < -LEFT_ANALOG_Y_DEADZONE ) {
+    y += leftAnalogY;
+  }
   // If the Left Analog X is inside the deadzone, then fine controll of gripper's distance from the base may be used
   if( leftAnalogX > -LEFT_ANALOG_X_DEADZONE  &&  leftAnalogX < LEFT_ANALOG_X_DEADZONE ) {
     // Fine controll of gripper's distance from the base using D-Pad
     if(ps2x.Button(PSB_PAD_UP))  y += 6;
     if(ps2x.Button(PSB_PAD_DOWN))  y -= 6;
   }
-  // Otherwise, controll the height of the gripper
-  else if(ps2x.Button(PSB_L1))  y += rightAnalogY * .5; // If L1 is pressed, move at half speed
-  else  z += rightAnalogY;
-
-
-  // Distance from base controll (Y)
-  //////////////////////////////////
-  float leftAnalogYRaw = ps2x.Analog(PSS_LY);
-  int leftAnalogY = map(leftAnalogYRaw, 0, 255, ANALOG_MAX, ANALOG_MIN);
-  if( leftAnalogY > LEFT_ANALOG_Y_DEADZONE  ||  leftAnalogY < -LEFT_ANALOG_Y_DEADZONE )  y += leftAnalogY;
 
   // Wrist Rotate
   ////////////////
@@ -200,9 +206,9 @@ byte PSX_poll( void ) {
   /////////////////////////////
   if(ps2x.Button(PSB_R2))  grip += 1; // Open gripper with R2
   if(ps2x.Button(PSB_L2))  grip -= 1; // Close Gripper with L2
-  if(ps2x.Button(PSB_L3))  grip = 10; // Open the gripper all the way with left analog stick click
+  if(ps2x.Button(PSB_L3))  grip = 1; // Open the gripper all the way with left analog stick click
   // Gripper opening stop points
-  grip = constrain(grip, 0, 10);
+  grip = constrain(grip, 1, 10);
 
   // Preset Positions
   ///////////////////
@@ -309,29 +315,15 @@ byte PSX_poll( void ) {
 
   // Reset Position
   if(ps2x.Button(PSB_SELECT)) {
-    setArmTo( x, y = 200, z = 350, wristAngle = 0, twist = 1500 , grip );
+    setArmTo( x, y = 200, z = 350, wristAngle = 0, twist = 0 , grip );
     delay(500);
   }
 }
 
 void printNewArmPosition() {
-  int newx = x;
-  float newy = y;
-  float newz = z;
-  float newwristAngle = wristAngle;
-  int newtwist = twist;
-  int newgrip = grip;
-  
-  // If any position variable changes, print the positions
-  if ( newx != oldx || newy != oldy || newz != oldz || newwristAngle != oldwristAngle || newtwist != oldtwist || newgrip != oldgrip) {
-    int oldx = newx;
-    float oldy = newy;
-    float oldz = newz;
-    float oldwristAngle = newwristAngle;
-    int oldtwist = newtwist;
-    int oldgrip = newgrip;
-    
-    Serial.print("\n\nsetArmTo( x = ");
+  // If any of the current position variable changes (does not equal the last ones), print the positions
+  if ( x != lastx || y != lasty || z != lastz || wristAngle != lastwristAngle || twist != lasttwist || grip != lastgrip) {
+    Serial.print("\nsetArmTo( x = ");
     Serial.print( x );
     Serial.print(", y = ");
     Serial.print( y );
@@ -344,7 +336,16 @@ void printNewArmPosition() {
     Serial.print(", grip = ");
     Serial.print( grip );
     Serial.print(" );");
+    Serial.print("\n");
   }
+    
+  // Update the last values
+  lastx = x;
+  lasty = y;
+  lastz = z;
+  lastwristAngle = wristAngle;
+  lasttwist = twist;
+  lastgrip = grip;
 }
 
 
